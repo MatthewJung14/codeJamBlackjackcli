@@ -9,6 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
+    <PackageReference Include="Spectre.Console.ImageSharp" Version="0.57.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="gator.jpg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="seminole.jpg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

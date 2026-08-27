@@ -49,9 +49,9 @@ class Game
 
         Console.WriteLine();
         if (_player.Hp <= 0)
-            Display.Line("The Evil Dealer drains the last of your HP. GAME OVER.", "red");
+            Display.Line("The Seminole Dealer drains the last of your HP. GAME OVER.", "red");
         else
-            Display.Line("The Evil Dealer collapses in a pile of cards. YOU WIN!", "green");
+            Display.Line("The Seminole Dealer collapses in a pile of cards. YOU WIN!", "green");
 
         Console.WriteLine($"\nSurvived {_round} round(s).");
     }
@@ -99,9 +99,9 @@ class Game
             Display.Line($"[Card Peek] The hidden dealer card is worth {_peekedDealerCardValue}.", "cyan");
         }
 
-        Console.WriteLine("Your hand:");
+        Display.Line("Your hand:", "white");
         Display.PrintHand(player.Cards);
-        Console.WriteLine("Dealer shows:");
+        Display.Line("Dealer shows:", "red");
         Display.PrintHand(dealer.Cards, hideLast: true);
 
         // Natural blackjack check
@@ -217,7 +217,7 @@ class Game
         {
             rawDamage = ScaleDamage(dealer.Value - player.Value, dealer.IsBlackjack);
             playerDealtDamage = false;
-            message = $"You busted. The Evil Dealer hits you for {{0}} damage!";
+            message = $"You busted. The Seminole Dealer hits you for {{0}} damage!";
         }
         else if (dealer.IsBust)
         {

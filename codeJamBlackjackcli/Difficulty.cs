@@ -15,7 +15,7 @@ record DifficultySettings(
     {
         Difficulty.Easy => new DifficultySettings(
             Name: "Easy",
-            StartingHp: 100,
+            StartingHp: 55,
             PlayerDamageMultiplier: 1.25,
             DealerDamageMultiplier: 0.75,
             DealerStandValue: 17,
@@ -24,7 +24,7 @@ record DifficultySettings(
 
         Difficulty.Hard => new DifficultySettings(
             Name: "Nightmare",
-            StartingHp: 100,
+            StartingHp: 40,
             PlayerDamageMultiplier: 0.9,
             DealerDamageMultiplier: 1.25,
             DealerStandValue: 17,
@@ -33,7 +33,7 @@ record DifficultySettings(
 
         _ => new DifficultySettings(
             Name: "Normal",
-            StartingHp: 100,
+            StartingHp: 45,
             PlayerDamageMultiplier: 1.0,
             DealerDamageMultiplier: 1.0,
             DealerStandValue: 17,
