@@ -4,6 +4,7 @@
 
 namespace BlackjackBrawl;
 
+// Entry point: starts a single Game.
 class Program
 {
     static void Main()

@@ -13,8 +13,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="gator.jpg" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="seminole.jpg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\gator.jpg" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\seminole.jpg" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

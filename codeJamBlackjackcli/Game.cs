@@ -4,6 +4,8 @@ using Spectre.Console;
 
 namespace BlackjackBrawl;
 
+// Orchestrates a full match: difficulty selection, the round loop,
+// player/dealer turns, damage resolution, and upgrade offers.
 class Game
 {
     private readonly Deck _deck = new();

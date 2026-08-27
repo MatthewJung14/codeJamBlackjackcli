@@ -1,7 +1,7 @@
 namespace BlackjackBrawl;
 
-enum UpgradeType { Shield, Peek, DoubleDamage, Heal, Reroll }
-
+// Display strings (name + description) for each UpgradeType, shown
+// when the player is offered a choice of upgrades.
 static class UpgradeInfo
 {
     public static string NameOf(UpgradeType t) => t switch
@@ -23,14 +23,4 @@ static class UpgradeInfo
         UpgradeType.Reroll => "Discard your opening hand and redraw once.",
         _ => ""
     };
-}
-
-class PlayerState
-{
-    public int Hp;
-    public int ShieldCharges;
-    public int PeekCharges;
-    public int DoubleDamageCharges;
-    public int RerollCharges;
-    public int TotalWins;
 }
