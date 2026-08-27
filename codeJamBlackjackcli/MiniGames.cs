@@ -17,6 +17,7 @@ static class MiniGames
 
     // ---------- Five-card poker ----------
 
+    // Ranks a 5-card hand according to standard poker hand rankings.
     public static PokerHandRank EvaluatePokerHand(IReadOnlyList<Card> cards)
     {
         var rankCounts = cards.GroupBy(c => c.Rank).Select(g => g.Count()).OrderByDescending(c => c).ToList();
@@ -39,6 +40,7 @@ static class MiniGames
         return PokerHandRank.HighCard;
     }
 
+    // Maps a poker hand's strength to the upgrade reward tier it pays out.
     public static RewardTier TierFor(PokerHandRank rank) => rank switch
     {
         PokerHandRank.HighCard => RewardTier.None,
@@ -47,6 +49,7 @@ static class MiniGames
         _ => RewardTier.Premium, // Straight or better
     };
 
+    // Display name for a poker hand rank.
     public static string Describe(PokerHandRank rank) => rank switch
     {
         PokerHandRank.HighCard => "High Card",
@@ -65,8 +68,10 @@ static class MiniGames
 
     public enum DiceBet { Under, Exactly, Over }
 
+    // Rolls two six-sided dice.
     public static (int First, int Second) RollDice(Random rng) => (rng.Next(1, 7), rng.Next(1, 7));
 
+    // Checks a dice bet against the rolled total and returns the reward tier, if any.
     public static RewardTier TierForDiceResult(DiceBet bet, int total)
     {
         bool hit = bet switch
@@ -80,6 +85,7 @@ static class MiniGames
         return bet == DiceBet.Exactly ? RewardTier.Premium : RewardTier.Common;
     }
 
+    // Display name for a dice bet option.
     public static string Describe(DiceBet bet) => bet switch
     {
         DiceBet.Under => "Under 7",

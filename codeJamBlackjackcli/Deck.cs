@@ -10,8 +10,10 @@ class Deck
     private readonly List<Card> _cards = new();
     private readonly Random _rng = new();
 
+    // Builds a full, shuffled deck on construction.
     public Deck() => Reset();
 
+    // Refills the deck with all 52 cards and shuffles it.
     public void Reset()
     {
         _cards.Clear();
@@ -22,6 +24,7 @@ class Deck
         Shuffle();
     }
 
+    // Randomizes the remaining card order in place.
     public void Shuffle()
     {
         // Fisher-Yates
@@ -32,6 +35,7 @@ class Deck
         }
     }
 
+    // Removes and returns the top card, reshuffling first if supply is running low.
     public Card Draw()
     {
         if (_cards.Count < 10) Reset(); // reshuffle before running dry

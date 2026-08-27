@@ -7,6 +7,7 @@ namespace BlackjackBrawl;
 // Entry point: starts a single Game.
 class Program
 {
+    // Starts and runs a single game session.
     static void Main()
     {
         new Game().Run();

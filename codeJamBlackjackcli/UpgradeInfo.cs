@@ -4,6 +4,7 @@ namespace BlackjackBrawl;
 // when the player is offered a choice of upgrades.
 static class UpgradeInfo
 {
+    // Short display name for an upgrade, shown in menus and pickup messages.
     public static string NameOf(UpgradeType t) => t switch
     {
         UpgradeType.Shield => "Shield",
@@ -14,6 +15,7 @@ static class UpgradeInfo
         _ => t.ToString()
     };
 
+    // One-line explanation of what an upgrade does, shown next to its name in the picker.
     public static string DescriptionOf(UpgradeType t) => t switch
     {
         UpgradeType.Shield => "Completely absorb the next hit you'd take.",

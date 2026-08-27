@@ -42,6 +42,8 @@ class Game
     private static readonly UpgradeType[] PremiumUpgradePool = { UpgradeType.Shield, UpgradeType.DoubleDamage };
     private static readonly UpgradeType[] FullUpgradePool = Enum.GetValues<UpgradeType>();
 
+    // Runs a full match from the title screen through round-by-round play
+    // until either side's HP hits zero.
     public void Run()
     {
         Display.PrintTitle();
@@ -86,6 +88,7 @@ class Game
         Console.WriteLine($"\nSurvived {_round} round(s).");
     }
 
+    // Prompts the player to pick a difficulty level.
     private Difficulty ChooseDifficulty()
     {
         const string easy = "Easy      - you hit harder, the dealer hits softer";
@@ -103,6 +106,8 @@ class Game
             : Difficulty.Normal;
     }
 
+    // Plays one full round: status/taunt display, special events, wagering,
+    // dealing, player and dealer turns, and resolving the outcome.
     private void PlayRound()
     {
         Display.ClearScreen();
@@ -232,6 +237,8 @@ class Game
         WaitForContinue();
     }
 
+    // Prompts for how much HP to wager this round, respecting the
+    // High Stakes curse's minimum when it's active.
     private int ChooseWager()
     {
         int minWager = _activeCurse == CursedModifier.HighStakes
@@ -248,6 +255,7 @@ class Game
                     : ValidationResult.Error($"Enter a value between {minWager} and {maxWager}.")));
     }
 
+    // Pauses at the end of a round until the player presses Enter.
     private static void WaitForContinue()
     {
         Console.WriteLine();
@@ -255,6 +263,8 @@ class Game
         Console.ReadLine();
     }
 
+    // Decides whether the dealer takes another card, honoring the
+    // configured stand value and any soft-17 rule (base or enrage-unlocked).
     private bool DealerShouldHit(Hand dealer)
     {
         if (dealer.Value < _difficulty.DealerStandValue) return true;
@@ -262,6 +272,7 @@ class Game
         return false;
     }
 
+    // Shows the dealer's full hand after the player's turn ends.
     private void RevealDealer(Hand dealer)
     {
         Display.Beat();
@@ -269,6 +280,8 @@ class Game
         Display.PrintHand(dealer.Cards);
     }
 
+    // Determines who won the hand (bust/value/push), updates win/bust
+    // streaks, and hands off to ApplyDamage for the actual HP change.
     private void ResolveRound(Hand player, Hand dealer, int wager, bool isAllIn)
     {
         // Bust-streak tracking is independent of who wins the hand.
@@ -334,6 +347,8 @@ class Game
         CheckEnrage();
     }
 
+    // Applies all damage modifiers (momentum, all-in, curses, upgrades,
+    // enrage, tilt) to the raw wager damage and updates HP accordingly.
     private void ApplyDamage(int rawDamage, bool playerDealtDamage, string messageTemplate, bool isAllIn)
     {
         int damage;
@@ -386,6 +401,7 @@ class Game
         Display.Line(string.Format(messageTemplate, damage), color);
     }
 
+    // Converts a win streak (and optional "desperate" low-HP state) into a damage multiplier.
     private static double MomentumBonus(int streak, bool desperate)
     {
         double bonus = 0.10 * Math.Min(streak, 3);
@@ -398,6 +414,8 @@ class Game
     private static int ScaleDamage(int wager, bool isBlackjack)
         => isBlackjack ? wager * 2 : wager;
 
+    // After a player win, grants a streak gift every 3rd consecutive win
+    // and offers a regular upgrade every 3rd total win.
     private void CheckForUpgradeOffer(bool playerWonHand)
     {
         if (!playerWonHand) return;
@@ -412,6 +430,7 @@ class Game
         OfferUpgrade();
     }
 
+    // Awards a free upgrade from the full pool as a reward for a 3-win streak.
     private void GrantStreakGift()
     {
         var upgrade = RandomUpgradeFrom(MiniGames.RewardTier.Full);
@@ -422,6 +441,8 @@ class Game
 
     // ---------- Dealer enrage phases ----------
 
+    // Triggers the dealer's 50%- and 25%-HP enrage phases the first time
+    // its HP crosses each threshold.
     private void CheckEnrage()
     {
         if (_dealerHp <= 0) return;
@@ -481,6 +502,8 @@ class Game
 
     // ---------- Cursed rounds & mini-games (mutually exclusive per round) ----------
 
+    // Randomly decides whether this round offers a mini-game or applies a
+    // curse; at most one of the two can happen per round.
     private void RollSpecialEvent()
     {
         _activeCurse = null;
@@ -499,6 +522,7 @@ class Game
         }
     }
 
+    // Prints the flavor text explaining which curse is active this round.
     private void AnnounceCurse(CursedModifier curse)
     {
         string text = curse switch
@@ -512,6 +536,8 @@ class Game
         Display.Line($"\n{text}", "purple");
     }
 
+    // Offers the player an optional poker or dice side wager, staking HP
+    // for a chance at a free upgrade (and a bonus heal on a premium result).
     private void OfferMiniGame()
     {
         bool poker = _rng.Next(2) == 0;
@@ -550,6 +576,7 @@ class Game
         ApplyUpgrade(upgrade);
     }
 
+    // Deals a 5-card poker hand from a fresh deck and returns its reward tier.
     private MiniGames.RewardTier PlayPokerMiniGame()
     {
         var miniDeck = new Deck();
@@ -563,6 +590,7 @@ class Game
         return MiniGames.TierFor(rank);
     }
 
+    // Lets the player pick an over/under/exact bet, rolls two dice, and returns the reward tier.
     private MiniGames.RewardTier PlayDiceMiniGame()
     {
         var bet = AnsiConsole.Prompt(
@@ -579,6 +607,7 @@ class Game
         return MiniGames.TierForDiceResult(bet, total);
     }
 
+    // Picks a random upgrade from the pool matching the given reward tier.
     private UpgradeType RandomUpgradeFrom(MiniGames.RewardTier tier) => tier switch
     {
         MiniGames.RewardTier.Common => CommonUpgradePool[_rng.Next(CommonUpgradePool.Length)],
@@ -588,6 +617,8 @@ class Game
 
     // ---------- Side bets ----------
 
+    // Optionally lets the player place a side bet on this hand's outcome
+    // before cards are dealt.
     private SideBet? MaybeOfferSideBet()
     {
         if (!AnsiConsole.Confirm("Place a side bet on this hand?", false)) return null;
@@ -609,6 +640,8 @@ class Game
         return new SideBet(outcome, stake);
     }
 
+    // Settles a placed side bet against the finished hands, dealing bonus
+    // damage on a hit or costing the player HP on a miss.
     private void ResolveSideBet(SideBet? bet, Hand player, Hand dealer)
     {
         if (bet is not { } sideBet) return;
@@ -626,6 +659,7 @@ class Game
         }
     }
 
+    // Presents 3 random upgrade choices and applies whichever the player picks.
     private void OfferUpgrade()
     {
         Console.WriteLine();
@@ -641,6 +675,8 @@ class Game
         ApplyUpgrade(pick);
     }
 
+    // Grants the effect of a single upgrade: adds a charge, or for Heal,
+    // restores HP immediately.
     private void ApplyUpgrade(UpgradeType upgrade)
     {
         switch (upgrade)

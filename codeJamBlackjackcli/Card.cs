@@ -32,5 +32,6 @@ record Card(int Rank, Suit Suit)
 
     public bool IsRed => Suit is Suit.Hearts or Suit.Diamonds;
 
+    // Short display form, e.g. "A♠" or "10♦".
     public override string ToString() => $"{RankName}{SuitSymbol}";
 }

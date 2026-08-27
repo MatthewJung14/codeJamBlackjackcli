@@ -30,6 +30,7 @@ record SideBet(SideBetOutcome Outcome, int Stake)
         _ => Outcome.ToString(),
     };
 
+    // Checks whether the finished hands satisfy this side bet's condition.
     public bool Hit(Hand player, Hand dealer) => Outcome switch
     {
         SideBetOutcome.DealerBusts => dealer.IsBust,

@@ -13,15 +13,19 @@ static class Display
     public const string Garnet = "maroon";
     public const string Gold = "gold1";
 
+    // Prints a single line of text in the given color, escaping any markup-special characters.
     public static void Line(string text, string color)
         => AnsiConsole.MarkupLine($"[{color}]{Markup.Escape(text)}[/]");
 
+    // Clears the console so each round starts on a fresh screen.
     public static void ClearScreen() => AnsiConsole.Clear();
 
+    // Pauses briefly, used for dramatic timing before a reveal.
     public static void Beat(int ms = 350) => System.Threading.Thread.Sleep(ms);
 
     // ---------- Card art ----------
 
+    // Builds a single bordered card panel, either face-up or as a face-down back.
     private static IRenderable CardPanel(Card card, bool faceDown)
     {
         if (faceDown)
@@ -43,6 +47,7 @@ static class Display
             .Padding(1, 0, 1, 0);
     }
 
+    // Renders a full hand as a row of card panels, optionally hiding the last card.
     public static void PrintHand(IReadOnlyList<Card> cards, bool hideLast = false)
     {
         var grid = new Grid();
@@ -59,6 +64,7 @@ static class Display
 
     // ---------- HP bars ----------
 
+    // Prints a labeled block-character HP bar plus the numeric HP value.
     public static void PrintHpBar(string label, int hp, int maxHp, string color)
     {
         int clamped = Math.Clamp(hp, 0, maxHp);
@@ -69,6 +75,8 @@ static class Display
 
     // ---------- Banners ----------
 
+    // Prints the game's title banner: the Figlet logo, rules blurb, and the
+    // gator/Seminole portrait panels.
     public static void PrintTitle()
     {
         AnsiConsole.Write(
@@ -123,6 +131,7 @@ static class Display
 
     private static readonly Random TauntRng = new();
 
+    // Prints a random dealer taunt in a bordered speech-bubble panel.
     public static void PrintTaunt()
     {
         string taunt = Taunts[TauntRng.Next(Taunts.Length)];

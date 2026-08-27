@@ -1,5 +1,8 @@
 namespace BlackjackBrawl;
 
+// The three selectable difficulty levels.
+enum Difficulty { Easy, Normal, Hard }
+
 // The tunable numbers behind each Difficulty: starting HP, damage
 // multipliers, and the dealer's stand/hit-soft-17/self-heal behavior.
 record DifficultySettings(
@@ -11,6 +14,7 @@ record DifficultySettings(
     bool DealerHitsSoftSeventeen,
     bool DealerCurse) // Hard mode: dealer periodically heals itself
 {
+    // Looks up the concrete tuning values for a chosen Difficulty.
     public static DifficultySettings For(Difficulty d) => d switch
     {
         Difficulty.Easy => new DifficultySettings(

@@ -9,7 +9,10 @@ class Hand
 {
     public List<Card> Cards { get; } = new();
 
+    // Adds a card to this hand.
     public void Add(Card c) => Cards.Add(c);
+
+    // Discards all held cards.
     public void Clear() => Cards.Clear();
 
     public int Value
@@ -43,5 +46,6 @@ class Hand
     public bool IsBust => Value > 21;
     public bool IsBlackjack => Cards.Count == 2 && Value == 21;
 
+    // Lists the held cards followed by the hand's current total, e.g. "K♣ 7♦  (=17)".
     public override string ToString() => string.Join(" ", Cards) + $"  (={Value})";
 }
