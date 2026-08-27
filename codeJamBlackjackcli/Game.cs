@@ -111,6 +111,7 @@ class Game
         {
             RevealDealer(dealer);
             ResolveRound(player, dealer);
+            WaitForContinue();
             return;
         }
 
@@ -153,6 +154,7 @@ class Game
                 {
                     RevealDealer(dealer);
                     ResolveRound(player, dealer);
+                    WaitForContinue();
                     return;
                 }
             }
@@ -177,6 +179,14 @@ class Game
         }
 
         ResolveRound(player, dealer);
+        WaitForContinue();
+    }
+
+    private static void WaitForContinue()
+    {
+        Console.WriteLine();
+        Console.Write("Press Enter to continue...");
+        Console.ReadLine();
     }
 
     private bool DealerShouldHit(Hand dealer)
