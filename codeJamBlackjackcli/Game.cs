@@ -10,6 +10,7 @@ class Game
     private readonly Random _rng = new();
     private readonly PlayerState _player = new();
     private DifficultySettings _difficulty = DifficultySettings.For(Difficulty.Normal);
+    private Difficulty _difficultyLevel;
 
     private int _dealerHp;
     private int _maxHp;
@@ -18,10 +19,32 @@ class Game
     // Set when the Peek upgrade auto-fires at the start of a round.
     private int? _peekedDealerCardValue;
 
+    // Momentum: mirrors PlayerState.WinStreak, but for the dealer.
+    private int _dealerWinStreak;
+
+    // Enrage: permanent traits the dealer unlocks as its own HP drops.
+    private bool _enragedAt50;
+    private bool _enragedAt25;
+    private bool _enrageSoft17Unlocked;
+    private int _enrageDamageBonusPct;
+    private bool _enrageHealBoostUnlocked;
+
+    // At most one special event (mini-game offer or curse) fires per round.
+    private CursedModifier? _activeCurse;
+
+    private const double MiniGameChance = 0.20;   // ~1 in 5 rounds
+    private const double CursedRoundChance = 0.15; // ~1 in 7 rounds
+    private const int MiniGameStake = 8;
+
+    private static readonly UpgradeType[] CommonUpgradePool = { UpgradeType.Peek, UpgradeType.Reroll };
+    private static readonly UpgradeType[] PremiumUpgradePool = { UpgradeType.Shield, UpgradeType.DoubleDamage };
+    private static readonly UpgradeType[] FullUpgradePool = Enum.GetValues<UpgradeType>();
+
     public void Run()
     {
         Display.PrintTitle();
-        _difficulty = DifficultySettings.For(ChooseDifficulty());
+        _difficultyLevel = ChooseDifficulty();
+        _difficulty = DifficultySettings.For(_difficultyLevel);
 
         _maxHp = _difficulty.StartingHp;
         _player.Hp = _maxHp;
@@ -36,13 +59,18 @@ class Game
             _round++;
             PlayRound();
 
-            if (_difficulty.DealerCurse && _dealerHp > 0 && _round % 4 == 0)
+            if (_difficulty.DealerCurse && _dealerHp > 0)
             {
-                int healed = Math.Min(5, _maxHp - _dealerHp);
-                if (healed > 0)
+                int healInterval = _enrageHealBoostUnlocked ? 3 : 4;
+                if (_round % healInterval == 0)
                 {
-                    _dealerHp += healed;
-                    Display.Line($"\nThe dealer channels dark Seminole magic, healing {healed} HP!", Display.Garnet);
+                    int healAmount = _enrageHealBoostUnlocked ? 10 : 5;
+                    int healed = Math.Min(healAmount, _maxHp - _dealerHp);
+                    if (healed > 0)
+                    {
+                        _dealerHp += healed;
+                        Display.Line($"\nThe dealer channels dark Seminole magic, healing {healed} HP!", Display.Garnet);
+                    }
                 }
             }
         }
@@ -79,8 +107,27 @@ class Game
         Display.Line($"===== Round {_round} =====", "cyan");
         Display.PrintHpBar("You", _player.Hp, _maxHp, "green");
         Display.PrintHpBar("Dealer", _dealerHp, _maxHp, Display.Garnet);
+
+        if (_player.WinStreak > 0)
+            Display.Line($"On fire! {_player.WinStreak}-win streak (+{10 * Math.Min(_player.WinStreak, 3)}% damage dealt).", Display.Gold);
+        if (_dealerWinStreak > 0)
+            Display.Line($"The dealer is on a {_dealerWinStreak}-win streak (+{10 * Math.Min(_dealerWinStreak, 3)}% damage taken).", Display.Garnet);
+        if (_player.BustStreak >= 2)
+            Display.Line("You're rattled from back-to-back busts. The dealer hits harder while you're tilted.", Display.Garnet);
+
         Console.WriteLine();
         Display.PrintTaunt();
+        Console.WriteLine();
+
+        RollSpecialEvent();
+
+        int wager = ChooseWager();
+        bool isAllIn = wager >= _player.Hp;
+        Display.Line(isAllIn
+            ? $"*** ALL IN! You wager your entire {wager} HP for a bigger payoff! ***"
+            : $"You wager {wager} HP this round.", "cyan");
+
+        var sideBet = MaybeOfferSideBet();
         Console.WriteLine();
 
         var player = new Hand();
@@ -108,7 +155,8 @@ class Game
         if (player.IsBlackjack || dealer.IsBlackjack)
         {
             RevealDealer(dealer);
-            ResolveRound(player, dealer);
+            ResolveRound(player, dealer, wager, isAllIn);
+            ResolveSideBet(sideBet, player, dealer);
             WaitForContinue();
             return;
         }
@@ -155,7 +203,8 @@ class Game
                 if (player.IsBlackjack)
                 {
                     RevealDealer(dealer);
-                    ResolveRound(player, dealer);
+                    ResolveRound(player, dealer, wager, isAllIn);
+                    ResolveSideBet(sideBet, player, dealer);
                     WaitForContinue();
                     return;
                 }
@@ -176,8 +225,25 @@ class Game
             }
         }
 
-        ResolveRound(player, dealer);
+        ResolveRound(player, dealer, wager, isAllIn);
+        ResolveSideBet(sideBet, player, dealer);
         WaitForContinue();
+    }
+
+    private int ChooseWager()
+    {
+        int minWager = _activeCurse == CursedModifier.HighStakes
+            ? Math.Min(_player.Hp, Math.Max(1, (int)Math.Ceiling(_player.Hp * 0.5)))
+            : 1;
+        int maxWager = Math.Max(minWager, _player.Hp);
+
+        if (minWager == maxWager) return maxWager;
+
+        return AnsiConsole.Prompt(
+            new TextPrompt<int>($"How much HP do you want to wager? ({minWager}-{maxWager})")
+                .Validate(w => w >= minWager && w <= maxWager
+                    ? ValidationResult.Success()
+                    : ValidationResult.Error($"Enter a value between {minWager} and {maxWager}.")));
     }
 
     private static void WaitForContinue()
@@ -190,7 +256,7 @@ class Game
     private bool DealerShouldHit(Hand dealer)
     {
         if (dealer.Value < _difficulty.DealerStandValue) return true;
-        if (_difficulty.DealerHitsSoftSeventeen && dealer.Value == 17 && dealer.IsSoft) return true;
+        if ((_difficulty.DealerHitsSoftSeventeen || _enrageSoft17Unlocked) && dealer.Value == 17 && dealer.IsSoft) return true;
         return false;
     }
 
@@ -201,8 +267,11 @@ class Game
         Display.PrintHand(dealer.Cards);
     }
 
-    private void ResolveRound(Hand player, Hand dealer)
+    private void ResolveRound(Hand player, Hand dealer, int wager, bool isAllIn)
     {
+        // Bust-streak tracking is independent of who wins the hand.
+        _player.BustStreak = player.IsBust ? _player.BustStreak + 1 : 0;
+
         int rawDamage;
         bool playerDealtDamage;
         string message;
@@ -215,19 +284,19 @@ class Game
 
         if (player.IsBust)
         {
-            rawDamage = ScaleDamage(dealer.Value - player.Value, dealer.IsBlackjack);
+            rawDamage = ScaleDamage(wager, dealer.IsBlackjack);
             playerDealtDamage = false;
             message = $"You busted. The Seminole Dealer hits you for {{0}} damage!";
         }
         else if (dealer.IsBust)
         {
-            rawDamage = ScaleDamage(player.Value - dealer.Value, player.IsBlackjack);
+            rawDamage = ScaleDamage(wager, player.IsBlackjack);
             playerDealtDamage = true;
             message = $"Dealer busted! You strike for {{0}} damage!";
         }
         else if (player.Value > dealer.Value)
         {
-            rawDamage = ScaleDamage(player.Value - dealer.Value, player.IsBlackjack);
+            rawDamage = ScaleDamage(wager, player.IsBlackjack);
             playerDealtDamage = true;
             message = player.IsBlackjack
                 ? "BLACKJACK! You unleash a critical hit for {0} damage!"
@@ -235,7 +304,7 @@ class Game
         }
         else if (dealer.Value > player.Value)
         {
-            rawDamage = ScaleDamage(dealer.Value - player.Value, dealer.IsBlackjack);
+            rawDamage = ScaleDamage(wager, dealer.IsBlackjack);
             playerDealtDamage = false;
             message = dealer.IsBlackjack
                 ? "Dealer hits BLACKJACK! You take a critical {0} damage!"
@@ -247,19 +316,35 @@ class Game
             return;
         }
 
-        ApplyDamage(rawDamage, playerDealtDamage, message);
+        if (playerDealtDamage)
+        {
+            _player.WinStreak++;
+            _dealerWinStreak = 0;
+        }
+        else
+        {
+            _dealerWinStreak++;
+            _player.WinStreak = 0;
+        }
+
+        ApplyDamage(rawDamage, playerDealtDamage, message, isAllIn);
         CheckForUpgradeOffer(playerDealtDamage);
+        CheckEnrage();
     }
 
-    private void ApplyDamage(int rawDamage, bool playerDealtDamage, string messageTemplate)
+    private void ApplyDamage(int rawDamage, bool playerDealtDamage, string messageTemplate, bool isAllIn)
     {
         int damage;
         string color;
 
         if (playerDealtDamage)
         {
-            damage = (int)Math.Round(rawDamage * _difficulty.PlayerDamageMultiplier);
-            if (_player.DoubleDamageCharges > 0)
+            double multiplier = _difficulty.PlayerDamageMultiplier * MomentumBonus(_player.WinStreak, desperate: _player.Hp <= _maxHp / 4);
+            if (isAllIn) multiplier *= 1.5;
+            if (_activeCurse == CursedModifier.RecklessRound) multiplier *= 2;
+            damage = (int)Math.Round(rawDamage * multiplier);
+
+            if (_player.DoubleDamageCharges > 0 && _activeCurse != CursedModifier.GlassCannon)
             {
                 _player.DoubleDamageCharges--;
                 damage = (int)Math.Round(damage * 1.5);
@@ -267,11 +352,26 @@ class Game
             }
             _dealerHp = Math.Clamp(_dealerHp - damage, 0, _maxHp);
             color = "green";
+
+            if (_activeCurse == CursedModifier.FortunesFavor)
+            {
+                int healed = Math.Min(5, _maxHp - _player.Hp);
+                if (healed > 0)
+                {
+                    _player.Hp += healed;
+                    Display.Line($"[Fortune's Favor] Victory heals you for {healed} HP!", "green");
+                }
+            }
         }
         else
         {
-            damage = (int)Math.Round(rawDamage * _difficulty.DealerDamageMultiplier);
-            if (_player.ShieldCharges > 0)
+            double multiplier = _difficulty.DealerDamageMultiplier * MomentumBonus(_dealerWinStreak, desperate: false);
+            if (_player.BustStreak >= 2) multiplier *= 1.15; // Tilt
+            if (_enrageDamageBonusPct > 0) multiplier *= 1 + _enrageDamageBonusPct / 100.0;
+            if (_activeCurse == CursedModifier.RecklessRound) multiplier *= 2;
+            damage = (int)Math.Round(rawDamage * multiplier);
+
+            if (_player.ShieldCharges > 0 && _activeCurse != CursedModifier.GlassCannon)
             {
                 _player.ShieldCharges--;
                 Display.Line("[Shield] Your shield absorbs the entire blow!", "cyan");
@@ -284,22 +384,244 @@ class Game
         Display.Line(string.Format(messageTemplate, damage), color);
     }
 
-    // Margin of victory becomes damage, with a floor/ceiling so rounds never feel
-    // pointless (too small) or instantly lethal (too big). Blackjack doubles it.
-    private static int ScaleDamage(int margin, bool isBlackjack)
+    private static double MomentumBonus(int streak, bool desperate)
     {
-        int baseDamage = Math.Clamp(Math.Abs(margin) + 5, 8, 25);
-        return isBlackjack ? baseDamage * 2 : baseDamage;
+        double bonus = 0.10 * Math.Min(streak, 3);
+        if (desperate) bonus += 0.15;
+        return 1 + bonus;
     }
+
+    // Damage dealt equals whatever HP the player wagered going into the round.
+    // A blackjack doubles it.
+    private static int ScaleDamage(int wager, bool isBlackjack)
+        => isBlackjack ? wager * 2 : wager;
 
     private void CheckForUpgradeOffer(bool playerWonHand)
     {
         if (!playerWonHand) return;
 
         _player.TotalWins++;
+
+        if (_player.WinStreak > 0 && _player.WinStreak % 3 == 0)
+            GrantStreakGift();
+
         if (_player.TotalWins % 3 != 0) return;
 
         OfferUpgrade();
+    }
+
+    private void GrantStreakGift()
+    {
+        var upgrade = RandomUpgradeFrom(MiniGames.RewardTier.Full);
+        Console.WriteLine();
+        Display.Line($"[Momentum] {_player.WinStreak}-win streak! The crowd roars and gifts you a free upgrade!", Display.Gold);
+        ApplyUpgrade(upgrade);
+    }
+
+    // ---------- Dealer enrage phases ----------
+
+    private void CheckEnrage()
+    {
+        if (_dealerHp <= 0) return;
+
+        if (!_enragedAt50 && _dealerHp <= _maxHp / 2)
+        {
+            _enragedAt50 = true;
+            TriggerEnrage(phase: 50);
+        }
+        if (!_enragedAt25 && _dealerHp <= _maxHp / 4)
+        {
+            _enragedAt25 = true;
+            TriggerEnrage(phase: 25);
+        }
+    }
+
+    // Enrage traits scale with difficulty: Easy barely notices, Nightmare escalates hardest.
+    private void TriggerEnrage(int phase)
+    {
+        switch (_difficultyLevel)
+        {
+            case Difficulty.Easy:
+                if (phase == 25)
+                {
+                    _enrageSoft17Unlocked = true;
+                    Display.Line("\n[Enrage] Wounded, the dealer starts hitting soft 17s!", Display.Garnet);
+                }
+                break;
+
+            case Difficulty.Hard:
+                if (phase == 50)
+                {
+                    _enrageDamageBonusPct += 10;
+                    Display.Line("\n[Enrage] Dark power surges through the dealer! (+10% damage)", Display.Garnet);
+                }
+                else
+                {
+                    _enrageHealBoostUnlocked = true;
+                    Display.Line("\n[Enrage] The Seminole curse grows stronger, doubling the dealer's healing!", Display.Garnet);
+                }
+                break;
+
+            default: // Normal
+                if (phase == 50)
+                {
+                    _enrageSoft17Unlocked = true;
+                    Display.Line("\n[Enrage] Growing desperate, the dealer starts hitting soft 17s!", Display.Garnet);
+                }
+                else
+                {
+                    _enrageDamageBonusPct += 10;
+                    Display.Line("\n[Enrage] The dealer's strikes grow fiercer! (+10% damage)", Display.Garnet);
+                }
+                break;
+        }
+    }
+
+    // ---------- Cursed rounds & mini-games (mutually exclusive per round) ----------
+
+    private void RollSpecialEvent()
+    {
+        _activeCurse = null;
+        if (_round <= 1) return;
+
+        double roll = _rng.NextDouble();
+        if (roll < MiniGameChance)
+        {
+            OfferMiniGame();
+        }
+        else if (roll < MiniGameChance + CursedRoundChance)
+        {
+            var pool = Enum.GetValues<CursedModifier>();
+            _activeCurse = pool[_rng.Next(pool.Length)];
+            AnnounceCurse(_activeCurse.Value);
+        }
+    }
+
+    private void AnnounceCurse(CursedModifier curse)
+    {
+        string text = curse switch
+        {
+            CursedModifier.RecklessRound => "CURSED ROUND: Reckless Round! All damage this round is doubled, for better or worse.",
+            CursedModifier.HighStakes => "CURSED ROUND: High Stakes! You must wager at least half your current HP this round.",
+            CursedModifier.GlassCannon => "CURSED ROUND: Glass Cannon! Shield and Empowered Strike are disabled this round.",
+            CursedModifier.FortunesFavor => "CURSED ROUND: Fortune's Favor! Winning this hand also heals you 5 HP.",
+            _ => "",
+        };
+        Display.Line($"\n{text}", "purple");
+    }
+
+    private void OfferMiniGame()
+    {
+        bool poker = _rng.Next(2) == 0;
+        Console.WriteLine();
+        Display.Line(
+            poker
+                ? "The dealer leans in: \"Care for a side wager? A quick five-card poker hand?\""
+                : "The dealer leans in: \"Care for a side wager? Roll the dice with me?\"",
+            Display.Gold);
+
+        if (!AnsiConsole.Confirm("Play the mini-game?", false)) return;
+
+        int stake = Math.Min(MiniGameStake, _player.Hp);
+        var tier = poker ? PlayPokerMiniGame() : PlayDiceMiniGame();
+
+        if (tier == MiniGames.RewardTier.None)
+        {
+            _player.Hp = Math.Clamp(_player.Hp - stake, 0, _maxHp);
+            Display.Line($"No luck this time. You lose {stake} HP.", "red");
+            return;
+        }
+
+        var upgrade = RandomUpgradeFrom(tier);
+        Display.Line($"You win! Gained: {UpgradeInfo.NameOf(upgrade)}!", "green");
+
+        if (tier == MiniGames.RewardTier.Premium)
+        {
+            int healed = Math.Min(5, _maxHp - _player.Hp);
+            if (healed > 0)
+            {
+                _player.Hp += healed;
+                Display.Line($"Incredible result! You also recover {healed} HP.", "green");
+            }
+        }
+
+        ApplyUpgrade(upgrade);
+    }
+
+    private MiniGames.RewardTier PlayPokerMiniGame()
+    {
+        var miniDeck = new Deck();
+        var hand = new[] { miniDeck.Draw(), miniDeck.Draw(), miniDeck.Draw(), miniDeck.Draw(), miniDeck.Draw() };
+
+        Console.WriteLine("Your poker hand:");
+        Display.PrintHand(hand);
+
+        var rank = MiniGames.EvaluatePokerHand(hand);
+        Display.Line($"That's a {MiniGames.Describe(rank)}!", "cyan");
+        return MiniGames.TierFor(rank);
+    }
+
+    private MiniGames.RewardTier PlayDiceMiniGame()
+    {
+        var bet = AnsiConsole.Prompt(
+            new SelectionPrompt<MiniGames.DiceBet>()
+                .Title("Bet on the roll:")
+                .HighlightStyle(new Style(Color.Gold1))
+                .UseConverter(MiniGames.Describe)
+                .AddChoices(Enum.GetValues<MiniGames.DiceBet>()));
+
+        var (d1, d2) = MiniGames.RollDice(_rng);
+        int total = d1 + d2;
+        Console.WriteLine($"You rolled {d1} + {d2} = {total}");
+
+        return MiniGames.TierForDiceResult(bet, total);
+    }
+
+    private UpgradeType RandomUpgradeFrom(MiniGames.RewardTier tier) => tier switch
+    {
+        MiniGames.RewardTier.Common => CommonUpgradePool[_rng.Next(CommonUpgradePool.Length)],
+        MiniGames.RewardTier.Premium => PremiumUpgradePool[_rng.Next(PremiumUpgradePool.Length)],
+        _ => FullUpgradePool[_rng.Next(FullUpgradePool.Length)],
+    };
+
+    // ---------- Side bets ----------
+
+    private SideBet? MaybeOfferSideBet()
+    {
+        if (!AnsiConsole.Confirm("Place a side bet on this hand?", false)) return null;
+
+        var outcome = AnsiConsole.Prompt(
+            new SelectionPrompt<SideBetOutcome>()
+                .Title("Bet on:")
+                .HighlightStyle(new Style(Color.Gold1))
+                .UseConverter(o => new SideBet(o, 0).Description)
+                .AddChoices(Enum.GetValues<SideBetOutcome>()));
+
+        int maxStake = Math.Max(1, _player.Hp);
+        int stake = AnsiConsole.Prompt(
+            new TextPrompt<int>($"Side bet stake? (1-{maxStake})")
+                .Validate(s => s >= 1 && s <= maxStake
+                    ? ValidationResult.Success()
+                    : ValidationResult.Error($"Enter a value between 1 and {maxStake}.")));
+
+        return new SideBet(outcome, stake);
+    }
+
+    private void ResolveSideBet(SideBet? bet, Hand player, Hand dealer)
+    {
+        if (bet is not { } sideBet) return;
+
+        if (sideBet.Hit(player, dealer))
+        {
+            int bonus = (int)Math.Round(sideBet.Stake * sideBet.Payout);
+            _dealerHp = Math.Clamp(_dealerHp - bonus, 0, _maxHp);
+            Display.Line($"[Side Bet] \"{sideBet.Description}\" hits! Extra {bonus} damage to the dealer!", "cyan");
+        }
+        else
+        {
+            _player.Hp = Math.Clamp(_player.Hp - sideBet.Stake, 0, _maxHp);
+            Display.Line($"[Side Bet] \"{sideBet.Description}\" misses. You lose {sideBet.Stake} HP.", "red");
+        }
     }
 
     private void OfferUpgrade()

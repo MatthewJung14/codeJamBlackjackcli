@@ -33,4 +33,8 @@ class PlayerState
     public int DoubleDamageCharges;
     public int RerollCharges;
     public int TotalWins;
+
+    // Momentum tracking
+    public int WinStreak;   // consecutive hands won, resets to 0 on any loss
+    public int BustStreak;  // consecutive hands busted, resets to 0 on any non-bust
 }
