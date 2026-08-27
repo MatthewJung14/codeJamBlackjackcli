@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using Spectre.Console;
 
 namespace BlackjackBrawl;
 
@@ -27,7 +28,7 @@ class Game
         _dealerHp = _maxHp;
 
         Console.WriteLine();
-        Display.WriteColored($"Difficulty: {_difficulty.Name}", ConsoleColor.Cyan);
+        Display.Line($"Difficulty: {_difficulty.Name}", "cyan");
         Display.Beat(600);
 
         while (_player.Hp > 0 && _dealerHp > 0)
@@ -41,45 +42,42 @@ class Game
                 if (healed > 0)
                 {
                     _dealerHp += healed;
-                    Display.WriteColored($"\nThe dealer channels dark Seminole magic, healing {healed} HP!", Display.Garnet);
+                    Display.Line($"\nThe dealer channels dark Seminole magic, healing {healed} HP!", Display.Garnet);
                 }
             }
         }
 
         Console.WriteLine();
         if (_player.Hp <= 0)
-            Display.WriteColored("The Evil Dealer drains the last of your HP. GAME OVER.", ConsoleColor.Red);
+            Display.Line("The Evil Dealer drains the last of your HP. GAME OVER.", "red");
         else
-            Display.WriteColored("The Evil Dealer collapses in a pile of cards. YOU WIN!", ConsoleColor.Green);
+            Display.Line("The Evil Dealer collapses in a pile of cards. YOU WIN!", "green");
 
         Console.WriteLine($"\nSurvived {_round} round(s).");
     }
 
     private Difficulty ChooseDifficulty()
     {
-        Console.WriteLine("Choose your difficulty:");
-        Console.WriteLine("  1) Easy      - you hit harder, the dealer hits softer");
-        Console.WriteLine("  2) Normal    - standard rules, even fight");
-        Console.WriteLine("  3) Nightmare - dealer hits soft 17, hits harder, and heals over time");
+        const string easy = "Easy      - you hit harder, the dealer hits softer";
+        const string normal = "Normal    - standard rules, even fight";
+        const string hard = "Nightmare - dealer hits soft 17, hits harder, and heals over time";
 
-        while (true)
-        {
-            Console.Write("> ");
-            switch (Console.ReadLine()?.Trim())
-            {
-                case "1": return Difficulty.Easy;
-                case "2": return Difficulty.Normal;
-                case "3": return Difficulty.Hard;
-                default: Console.WriteLine("Enter 1, 2, or 3."); break;
-            }
-        }
+        var choice = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title($"Choose your [{Display.Garnet} bold]difficulty[/]:")
+                .HighlightStyle(new Style(Color.Gold1))
+                .AddChoices(easy, normal, hard));
+
+        return choice == easy ? Difficulty.Easy
+            : choice == hard ? Difficulty.Hard
+            : Difficulty.Normal;
     }
 
     private void PlayRound()
     {
         Display.ClearScreen();
-        Display.WriteColored($"===== Round {_round} =====", ConsoleColor.Cyan);
-        Display.PrintHpBar("You", _player.Hp, _maxHp, ConsoleColor.Green);
+        Display.Line($"===== Round {_round} =====", "cyan");
+        Display.PrintHpBar("You", _player.Hp, _maxHp, "green");
         Display.PrintHpBar("Dealer", _dealerHp, _maxHp, Display.Garnet);
         Console.WriteLine();
         Display.PrintTaunt();
@@ -98,7 +96,7 @@ class Game
         {
             _player.PeekCharges--;
             _peekedDealerCardValue = dealer.Cards[1].BaseValue;
-            Display.WriteColored($"[Card Peek] The hidden dealer card is worth {_peekedDealerCardValue}.", ConsoleColor.Cyan);
+            Display.Line($"[Card Peek] The hidden dealer card is worth {_peekedDealerCardValue}.", "cyan");
         }
 
         Console.WriteLine("Your hand:");
@@ -119,10 +117,14 @@ class Game
         while (true)
         {
             bool canReroll = !hasRerolled && _player.RerollCharges > 0 && player.Cards.Count == 2;
-            Console.Write(canReroll ? "Hit, Stand, or Reroll? (h/s/r): " : "Hit or Stand? (h/s): ");
-            var input = Console.ReadLine()?.Trim().ToLowerInvariant();
+            var choices = canReroll ? new[] { "Hit", "Stand", "Reroll" } : new[] { "Hit", "Stand" };
+            var action = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("Your move:")
+                    .HighlightStyle(new Style(Color.Gold1))
+                    .AddChoices(choices));
 
-            if (input == "h")
+            if (action == "Hit")
             {
                 var card = _deck.Draw();
                 player.Add(card);
@@ -131,22 +133,22 @@ class Game
 
                 if (player.IsBust)
                 {
-                    Display.WriteColored("You busted!", ConsoleColor.Red);
+                    Display.Line("You busted!", "red");
                     break;
                 }
             }
-            else if (input == "s")
+            else if (action == "Stand")
             {
                 break;
             }
-            else if (input == "r" && canReroll)
+            else // Reroll
             {
                 _player.RerollCharges--;
                 hasRerolled = true;
                 player.Clear();
                 player.Add(_deck.Draw());
                 player.Add(_deck.Draw());
-                Display.WriteColored("[Second Chance] You discard your hand and redraw.", ConsoleColor.Cyan);
+                Display.Line("[Second Chance] You discard your hand and redraw.", "cyan");
                 Display.PrintHand(player.Cards);
 
                 if (player.IsBlackjack)
@@ -155,10 +157,6 @@ class Game
                     ResolveRound(player, dealer);
                     return;
                 }
-            }
-            else
-            {
-                Console.WriteLine(canReroll ? "Type 'h' to hit, 's' to stand, or 'r' to reroll." : "Type 'h' to hit or 's' to stand.");
             }
         }
 
@@ -246,7 +244,7 @@ class Game
     private void ApplyDamage(int rawDamage, bool playerDealtDamage, string messageTemplate)
     {
         int damage;
-        ConsoleColor color;
+        string color;
 
         if (playerDealtDamage)
         {
@@ -255,10 +253,10 @@ class Game
             {
                 _player.DoubleDamageCharges--;
                 damage = (int)Math.Round(damage * 1.5);
-                Display.WriteColored("[Empowered Strike] Your attack hits harder!", ConsoleColor.Cyan);
+                Display.Line("[Empowered Strike] Your attack hits harder!", "cyan");
             }
             _dealerHp = Math.Clamp(_dealerHp - damage, 0, _maxHp);
-            color = ConsoleColor.Green;
+            color = "green";
         }
         else
         {
@@ -266,14 +264,14 @@ class Game
             if (_player.ShieldCharges > 0)
             {
                 _player.ShieldCharges--;
-                Display.WriteColored("[Shield] Your shield absorbs the entire blow!", ConsoleColor.Cyan);
+                Display.Line("[Shield] Your shield absorbs the entire blow!", "cyan");
                 damage = 0;
             }
             _player.Hp = Math.Clamp(_player.Hp - damage, 0, _maxHp);
-            color = ConsoleColor.Red;
+            color = "red";
         }
 
-        Display.WriteColored(string.Format(messageTemplate, damage), color);
+        Display.Line(string.Format(messageTemplate, damage), color);
     }
 
     // Margin of victory becomes damage, with a floor/ceiling so rounds never feel
@@ -297,24 +295,16 @@ class Game
     private void OfferUpgrade()
     {
         Console.WriteLine();
-        Display.WriteColored($"*** {_player.TotalWins} wins! Choose an upgrade: ***", ConsoleColor.Yellow);
 
         var options = Enum.GetValues<UpgradeType>().OrderBy(_ => _rng.Next()).Take(3).ToList();
-        for (int i = 0; i < options.Count; i++)
-        {
-            Console.WriteLine($"  {i + 1}) {UpgradeInfo.NameOf(options[i])} - {UpgradeInfo.DescriptionOf(options[i])}");
-        }
+        var pick = AnsiConsole.Prompt(
+            new SelectionPrompt<UpgradeType>()
+                .Title($"[{Display.Gold} bold]*** {_player.TotalWins} wins! Choose an upgrade: ***[/]")
+                .HighlightStyle(new Style(Color.Gold1))
+                .UseConverter(u => $"{UpgradeInfo.NameOf(u)} - {UpgradeInfo.DescriptionOf(u)}")
+                .AddChoices(options));
 
-        while (true)
-        {
-            Console.Write("> ");
-            if (int.TryParse(Console.ReadLine()?.Trim(), out int choice) && choice >= 1 && choice <= options.Count)
-            {
-                ApplyUpgrade(options[choice - 1]);
-                return;
-            }
-            Console.WriteLine($"Enter a number from 1 to {options.Count}.");
-        }
+        ApplyUpgrade(pick);
     }
 
     private void ApplyUpgrade(UpgradeType upgrade)
@@ -336,10 +326,10 @@ class Game
             case UpgradeType.Heal:
                 int healed = Math.Min(15, _maxHp - _player.Hp);
                 _player.Hp += healed;
-                Display.WriteColored($"You patch yourself up for {healed} HP.", ConsoleColor.Green);
+                Display.Line($"You patch yourself up for {healed} HP.", "green");
                 break;
         }
 
-        Display.WriteColored($"Acquired: {UpgradeInfo.NameOf(upgrade)}!", ConsoleColor.Yellow);
+        Display.Line($"Acquired: {UpgradeInfo.NameOf(upgrade)}!", "yellow");
     }
 }

@@ -1,118 +1,95 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace BlackjackBrawl;
 
 static class Display
 {
-    public const ConsoleColor Garnet = ConsoleColor.DarkRed;
-    public const ConsoleColor Gold = ConsoleColor.Yellow;
+    public const string Garnet = "maroon";
+    public const string Gold = "gold1";
 
-    public static void WriteColored(string text, ConsoleColor color, bool newLine = true)
-    {
-        Console.ForegroundColor = color;
-        if (newLine) Console.WriteLine(text);
-        else Console.Write(text);
-        Console.ResetColor();
-    }
+    public static void Line(string text, string color)
+        => AnsiConsole.MarkupLine($"[{color}]{Markup.Escape(text)}[/]");
 
-    public static void ClearScreen()
-    {
-        try { Console.Clear(); } catch { /* redirected output, ignore */ }
-    }
+    public static void ClearScreen() => AnsiConsole.Clear();
 
     public static void Beat(int ms = 350) => System.Threading.Thread.Sleep(ms);
 
     // ---------- Card art ----------
 
-    private static string[] CardLines(Card card, bool faceDown)
+    private static IRenderable CardPanel(Card card, bool faceDown)
     {
         if (faceDown)
         {
-            return new[]
-            {
-                "┌─────┐",
-                "│░░░░░│",
-                "│░░░░░│",
-                "│░░░░░│",
-                "└─────┘",
-            };
+            var back = new Markup("[grey]░░░[/]\n[grey]░░░[/]").Centered();
+            return new Panel(back)
+                .Border(BoxBorder.Rounded)
+                .BorderStyle(new Style(Color.Grey))
+                .Padding(1, 0, 1, 0);
         }
 
-        string rank = card.RankName;
-        return new[]
-        {
-            "┌─────┐",
-            $"│{rank,-2}   │",
-            $"│  {card.SuitSymbol}  │",
-            $"│   {rank,2}│",
-            "└─────┘",
-        };
+        string color = card.IsRed ? "red" : "white";
+        var content = new Markup(
+            $"[{color} bold]{card.RankName}[/]\n[{color}]{card.SuitSymbol}[/]").Centered();
+
+        return new Panel(content)
+            .Border(BoxBorder.Rounded)
+            .BorderStyle(new Style(card.IsRed ? Color.Red : Color.White))
+            .Padding(1, 0, 1, 0);
     }
 
     public static void PrintHand(IReadOnlyList<Card> cards, bool hideLast = false)
     {
-        var lines = new string[cards.Count][];
-        var colors = new ConsoleColor[cards.Count];
-
+        var grid = new Grid();
         for (int i = 0; i < cards.Count; i++)
-        {
-            bool faceDown = hideLast && i == cards.Count - 1;
-            lines[i] = CardLines(cards[i], faceDown);
-            colors[i] = faceDown ? ConsoleColor.DarkGray
-                : cards[i].IsRed ? ConsoleColor.Red
-                : ConsoleColor.White;
-        }
+            grid.AddColumn(new GridColumn().NoWrap().PadRight(1));
 
-        for (int row = 0; row < 5; row++)
-        {
-            for (int i = 0; i < cards.Count; i++)
-            {
-                WriteColored(lines[i][row], colors[i], newLine: false);
-                Console.Write(" ");
-            }
-            Console.WriteLine();
-        }
+        var panels = cards
+            .Select((c, i) => CardPanel(c, hideLast && i == cards.Count - 1))
+            .ToArray();
+
+        grid.AddRow(panels);
+        AnsiConsole.Write(grid);
     }
 
     // ---------- HP bars ----------
 
-    public static void PrintHpBar(string label, int hp, int maxHp, ConsoleColor color)
+    public static void PrintHpBar(string label, int hp, int maxHp, string color)
     {
         int clamped = Math.Clamp(hp, 0, maxHp);
         int filled = (int)Math.Round(20.0 * clamped / maxHp);
         string bar = new string('█', filled) + new string('░', 20 - filled);
-        Console.Write($"{label,-6} HP: [");
-        WriteColored(bar, color, newLine: false);
-        Console.WriteLine($"] {clamped}/{maxHp}");
+        AnsiConsole.MarkupLine($"[bold]{label,-6}[/] HP [[[{color}]{bar}[/]]] [bold]{clamped}[/]/{maxHp}");
     }
 
     // ---------- Banners ----------
 
     public static void PrintTitle()
     {
-        WriteColored(@"
- ____  _               _    _            _      ____                  _
-| __ )| | __ _  ___ _  | | _(_) __ _  ___| | __ | __ ) _ __ __ ___      _| |
-|  _ \| |/ _` |/ __| |/ / |/ / |/ _` |/ __| |/ / |  _ \| '__/ _` \ \ /\ / / |
-| |_) | | (_| | (__|   <|   <| | (_| | (__|   <  | |_) | | | (_| |\ V  V /| |
-|____/|_|\__,_|\___|_|\_\_|\_\_|\__,_|\___|_|\_\ |____/|_|  \__,_| \_/\_/ |_|
-", ConsoleColor.Magenta);
+        AnsiConsole.Write(
+            new FigletText("BLACKJACK BRAWL")
+                .Centered()
+                .Color(Color.Fuchsia));
 
-        WriteColored("           vs. THE EVIL DEALER OF THE GARNET & GOLD", Garnet);
-        Console.WriteLine();
-        WriteColored(@"                 .-'---`-.
-              ,'          `.
-             /   O      O   \      ""Chop. Chop. Chop.""
-            |      ____      |
-             \    '----'    /       Every card he flips
-              `.          ,'        bleeds garnet and gold.
-                `--------'
-", Gold);
+        AnsiConsole.Write(new Rule($"[{Garnet} bold]vs. THE EVIL DEALER OF THE GARNET & GOLD[/]").RuleStyle(Garnet));
 
-        Console.WriteLine("You and the Dealer each start with HP instead of chips.");
-        Console.WriteLine("Win hands to deal damage. Bust or lose hands and you take damage.");
-        Console.WriteLine("Blackjacks deal double damage. First to 0 HP loses.\n");
+        var face = new Markup(
+            $"[{Gold}]     .-'---`-.\n" +
+            "  ,'          `.\n" +
+            " /   O      O   \\      \"Chop. Chop. Chop.\"\n" +
+            "|      ____      |\n" +
+            " \\    '----'    /       Every card he flips\n" +
+            "  `.          ,'        bleeds garnet and gold.\n" +
+            $"    `--------'[/]");
+
+        AnsiConsole.Write(new Panel(face).Border(BoxBorder.Heavy).BorderStyle(new Style(Color.Maroon)));
+
+        AnsiConsole.MarkupLine("You and the Dealer each start with HP instead of chips.");
+        AnsiConsole.MarkupLine("Win hands to deal damage. Bust or lose hands and you take damage.");
+        AnsiConsole.MarkupLine("Blackjacks deal double damage. First to 0 HP loses.\n");
     }
 
     private static readonly string[] Taunts =
@@ -131,6 +108,11 @@ static class Display
 
     public static void PrintTaunt()
     {
-        WriteColored(Taunts[TauntRng.Next(Taunts.Length)], Garnet);
+        string taunt = Taunts[TauntRng.Next(Taunts.Length)];
+        var panel = new Panel(new Markup($"[{Gold}]{Markup.Escape(taunt)}[/]"))
+            .Header($"[{Garnet} bold] Evil Dealer [/]")
+            .Border(BoxBorder.Rounded)
+            .BorderStyle(new Style(Color.Maroon));
+        AnsiConsole.Write(panel);
     }
 }
