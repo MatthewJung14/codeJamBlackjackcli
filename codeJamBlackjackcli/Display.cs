@@ -6,6 +6,8 @@ using Spectre.Console.Rendering;
 
 namespace BlackjackBrawl;
 
+// All console rendering: the title screen, card panels, HP bars, and
+// dealer taunts. Game drives the flow; this class is purely presentation.
 static class Display
 {
     public const string Garnet = "maroon";
@@ -76,7 +78,7 @@ static class Display
 
         AnsiConsole.Write(new Rule($"[{Garnet} bold]vs. THE SEMINOLE DEALER[/]").RuleStyle(Garnet));
 
-        string gatorPath = Path.Combine(AppContext.BaseDirectory, "gator.jpg");
+        string gatorPath = Path.Combine(AppContext.BaseDirectory, "Assets", "gator.jpg");
         IRenderable gatorContent = File.Exists(gatorPath)
             ? new CanvasImage(gatorPath).MaxWidth(24)
             : new Markup("[red]gator.jpg not found[/]");
@@ -86,7 +88,7 @@ static class Display
             .Border(BoxBorder.Heavy)
             .BorderStyle(new Style(Color.Green));
 
-        string seminolePath = Path.Combine(AppContext.BaseDirectory, "seminole.jpg");
+        string seminolePath = Path.Combine(AppContext.BaseDirectory, "Assets", "seminole.jpg");
         IRenderable seminoleContent = File.Exists(seminolePath)
             ? new CanvasImage(seminolePath).MaxWidth(24)
             : new Markup("[red]seminole.jpg not found[/]");
