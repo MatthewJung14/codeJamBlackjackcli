@@ -128,6 +128,15 @@ class Game
 
         RollSpecialEvent();
 
+        // A mini-game loss can drain the player's HP to 0 before the hand is
+        // even dealt - if that happened, skip straight to the game-over check
+        // in Run() instead of playing out a hand with no HP left to wager.
+        if (_player.Hp <= 0)
+        {
+            WaitForContinue();
+            return;
+        }
+
         int wager = ChooseWager();
         bool isAllIn = wager >= _player.Hp;
         Display.Line(isAllIn
@@ -536,22 +545,30 @@ class Game
         Display.Line($"\n{text}", "purple");
     }
 
-    // Offers the player an optional poker or dice side wager, staking HP
-    // for a chance at a free upgrade (and a bonus heal on a premium result).
+    // Offers the player an optional poker, dice, or high-low side wager,
+    // staking HP for a chance at a free upgrade (and a bonus heal on a
+    // premium result).
     private void OfferMiniGame()
     {
-        bool poker = _rng.Next(2) == 0;
+        int kind = _rng.Next(3);
+        string pitch = kind switch
+        {
+            0 => "The dealer leans in: \"Care for a side wager? A quick five-card poker hand?\"",
+            1 => "The dealer leans in: \"Care for a side wager? Roll the dice with me?\"",
+            _ => "The dealer leans in: \"Care for a side wager? Call the next card, higher or lower?\"",
+        };
         Console.WriteLine();
-        Display.Line(
-            poker
-                ? "The dealer leans in: \"Care for a side wager? A quick five-card poker hand?\""
-                : "The dealer leans in: \"Care for a side wager? Roll the dice with me?\"",
-            Display.Gold);
+        Display.Line(pitch, Display.Gold);
 
         if (!AnsiConsole.Confirm("Play the mini-game?", false)) return;
 
         int stake = Math.Min(MiniGameStake, _player.Hp);
-        var tier = poker ? PlayPokerMiniGame() : PlayDiceMiniGame();
+        var tier = kind switch
+        {
+            0 => PlayPokerMiniGame(),
+            1 => PlayDiceMiniGame(),
+            _ => PlayHighLowMiniGame(),
+        };
 
         if (tier == MiniGames.RewardTier.None)
         {
@@ -605,6 +622,46 @@ class Game
         Console.WriteLine($"You rolled {d1} + {d2} = {total}");
 
         return MiniGames.TierForDiceResult(bet, total);
+    }
+
+    // Streak-based higher/lower guessing game: each correct guess raises the
+    // reward tier (Common -> Full -> Premium), and the player may bank it or
+    // push their luck for a bigger one until they either cash out or miss.
+    private MiniGames.RewardTier PlayHighLowMiniGame()
+    {
+        var tiers = new[] { MiniGames.RewardTier.Common, MiniGames.RewardTier.Full, MiniGames.RewardTier.Premium };
+        var miniDeck = new Deck();
+        var current = miniDeck.Draw();
+        Console.WriteLine("Your card:");
+        Display.PrintHand(new[] { current });
+
+        for (int streak = 0; streak < tiers.Length; streak++)
+        {
+            var guess = AnsiConsole.Prompt(
+                new SelectionPrompt<MiniGames.HighLowGuess>()
+                    .Title($"Next card higher or lower than {current}?")
+                    .HighlightStyle(new Style(Color.Gold1))
+                    .UseConverter(MiniGames.Describe)
+                    .AddChoices(Enum.GetValues<MiniGames.HighLowGuess>()));
+
+            var next = miniDeck.Draw();
+            Console.WriteLine($"Next card: {next}");
+
+            if (!MiniGames.EvaluateHighLowGuess(guess, current.Rank, next.Rank))
+            {
+                Display.Line("Wrong call! The streak ends with nothing.", "red");
+                return MiniGames.RewardTier.None;
+            }
+
+            Display.Line($"Correct! ({streak + 1} in a row)", "green");
+            current = next;
+
+            bool isLastStreak = streak == tiers.Length - 1;
+            if (!isLastStreak && !AnsiConsole.Confirm($"Push your luck for a bigger prize? (declining banks the {tiers[streak]} reward now)", true))
+                return tiers[streak];
+        }
+
+        return tiers[^1];
     }
 
     // Picks a random upgrade from the pool matching the given reward tier.

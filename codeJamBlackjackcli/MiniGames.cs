@@ -93,4 +93,25 @@ static class MiniGames
         DiceBet.Over => "Over 7",
         _ => bet.ToString(),
     };
+
+    // ---------- High-Low ----------
+
+    public enum HighLowGuess { Higher, Lower }
+
+    // Checks a higher/lower guess against two card ranks (Ace = 1, low).
+    // A tie (equal ranks) satisfies neither guess and counts as a miss.
+    public static bool EvaluateHighLowGuess(HighLowGuess guess, int previousRank, int nextRank) => guess switch
+    {
+        HighLowGuess.Higher => nextRank > previousRank,
+        HighLowGuess.Lower => nextRank < previousRank,
+        _ => false,
+    };
+
+    // Display name for a high-low guess option.
+    public static string Describe(HighLowGuess guess) => guess switch
+    {
+        HighLowGuess.Higher => "Higher",
+        HighLowGuess.Lower => "Lower",
+        _ => guess.ToString(),
+    };
 }
