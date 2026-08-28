@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Security.AccessControl;
 using Spectre.Console;
 
 namespace BlackjackBrawl;
@@ -18,6 +19,7 @@ class Game
     private int _maxHp;
     private int _round;
 
+    private int _lastMinigameRound = 0; 
     // Set when the Peek upgrade auto-fires at the start of a round.
     private int? _peekedDealerCardValue;
 
@@ -143,7 +145,7 @@ class Game
             ? $"*** ALL IN! You wager your entire {wager} HP for a bigger payoff! ***"
             : $"You wager {wager} HP this round.", "cyan");
 
-        var sideBet = MaybeOfferSideBet();
+        var sideBet = MaybeOfferSideBet(wager);
         Console.WriteLine();
 
         var player = new Hand();
@@ -521,6 +523,12 @@ class Game
         double roll = _rng.NextDouble();
         if (roll < MiniGameChance)
         {
+            _lastMinigameRound = _round;
+            OfferMiniGame();
+            //gurantee a minigame every 5 rounds
+        } else if (_round - _lastMinigameRound > 5)
+        {
+            _lastMinigameRound = _round; 
             OfferMiniGame();
         }
         else if (roll < MiniGameChance + CursedRoundChance)
@@ -676,7 +684,9 @@ class Game
 
     // Optionally lets the player place a side bet on this hand's outcome
     // before cards are dealt.
-    private SideBet? MaybeOfferSideBet()
+
+    //Fixed bug that allowed side bet plus main wager to exceed hp
+    private SideBet? MaybeOfferSideBet(int wager)
     {
         if (!AnsiConsole.Confirm("Place a side bet on this hand?", false)) return null;
 
@@ -687,7 +697,7 @@ class Game
                 .UseConverter(o => new SideBet(o, 0).Description)
                 .AddChoices(Enum.GetValues<SideBetOutcome>()));
 
-        int maxStake = Math.Max(1, _player.Hp);
+        int maxStake = Math.Max(1, _player.Hp - wager);
         int stake = AnsiConsole.Prompt(
             new TextPrompt<int>($"Side bet stake? (1-{maxStake})")
                 .Validate(s => s >= 1 && s <= maxStake
