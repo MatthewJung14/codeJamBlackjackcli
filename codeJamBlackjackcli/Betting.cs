@@ -22,13 +22,18 @@ record SideBet(SideBetOutcome Outcome, int Stake)
         _ => 0,
     };
 
-    public string Description => Outcome switch
+    // Review note: pulled the switch out into a static method so callers who
+    // only need display text (see Game.MaybeOfferSideBet) don't have to
+    // construct a whole SideBet with a placeholder Stake just to read this.
+    public static string DescriptionFor(SideBetOutcome outcome) => outcome switch
     {
         SideBetOutcome.DealerBusts => "Dealer busts (1.5x payout)",
         SideBetOutcome.PlayerBlackjack => "You draw a blackjack (5x payout)",
         SideBetOutcome.Push => "Hand is a push/tie (3x payout)",
-        _ => Outcome.ToString(),
+        _ => outcome.ToString(),
     };
+
+    public string Description => DescriptionFor(Outcome);
 
     // Checks whether the finished hands satisfy this side bet's condition.
     public bool Hit(Hand player, Hand dealer) => Outcome switch
