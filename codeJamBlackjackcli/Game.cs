@@ -18,9 +18,6 @@ class Game
     private int _maxHp;
     private int _round;
 
-    // Set when the Peek upgrade auto-fires at the start of a round.
-    private int? _peekedDealerCardValue;
-
     // Momentum: mirrors PlayerState.WinStreak, but for the dealer.
     private int _dealerWinStreak;
 
@@ -69,12 +66,8 @@ class Game
                 if (_round % healInterval == 0)
                 {
                     int healAmount = _enrageHealBoostUnlocked ? 10 : 5;
-                    int healed = Math.Min(healAmount, _maxHp - _dealerHp);
-                    if (healed > 0)
-                    {
-                        _dealerHp += healed;
-                        Display.Line($"\nThe dealer channels dark Seminole magic, healing {healed} HP!", Display.Garnet);
-                    }
+                    Heal(ref _dealerHp, _maxHp, healAmount,
+                        "\nThe dealer channels dark Seminole magic, healing {0} HP!", Display.Garnet);
                 }
             }
         }
@@ -154,12 +147,15 @@ class Game
         player.Add(_deck.Draw());
         dealer.Add(_deck.Draw());
 
-        _peekedDealerCardValue = null;
+        // Review note: this was previously a class field (_peekedDealerCardValue),
+        // but it's only ever set and read right here within PlayRound, so it
+        // doesn't need to persist across method calls or rounds. Making it a
+        // local variable makes that scope clearer at a glance.
         if (_player.PeekCharges > 0)
         {
             _player.PeekCharges--;
-            _peekedDealerCardValue = dealer.Cards[1].BaseValue;
-            Display.Line($"[Card Peek] The hidden dealer card is worth {_peekedDealerCardValue}.", "cyan");
+            int peekedDealerCardValue = dealer.Cards[1].BaseValue;
+            Display.Line($"[Card Peek] The hidden dealer card is worth {peekedDealerCardValue}.", "cyan");
         }
 
         Display.Line("Your hand:", "white");
@@ -291,6 +287,16 @@ class Game
 
     // Determines who won the hand (bust/value/push), updates win/bust
     // streaks, and hands off to ApplyDamage for the actual HP change.
+    //
+    // Review note: previously this method built a message string containing a
+    // literal "{0}" placeholder, then passed it into ApplyDamage, which filled
+    // it in with string.Format once the final (post-multiplier) damage number
+    // was known. That works, but it means the message text and the number that
+    // fills it are assembled in two different methods, so you have to read both
+    // to see how a line like "You take 12 damage!" actually gets built. Below,
+    // ApplyDamage now just returns the computed damage, and the message is
+    // built here in one place, right where the outcome (win/loss/blackjack) is
+    // already being decided.
     private void ResolveRound(Hand player, Hand dealer, int wager, bool isAllIn)
     {
         // Bust-streak tracking is independent of who wins the hand.
@@ -298,7 +304,7 @@ class Game
 
         int rawDamage;
         bool playerDealtDamage;
-        string message;
+        bool isCriticalHit; // true when the damage-dealing side won with a blackjack
 
         if (player.IsBust && dealer.IsBust)
         {
@@ -310,29 +316,25 @@ class Game
         {
             rawDamage = ScaleDamage(wager, dealer.IsBlackjack);
             playerDealtDamage = false;
-            message = $"You busted. The Seminole Dealer hits you for {{0}} damage!";
+            isCriticalHit = false;
         }
         else if (dealer.IsBust)
         {
             rawDamage = ScaleDamage(wager, player.IsBlackjack);
             playerDealtDamage = true;
-            message = $"Dealer busted! You strike for {{0}} damage!";
+            isCriticalHit = false;
         }
         else if (player.Value > dealer.Value)
         {
             rawDamage = ScaleDamage(wager, player.IsBlackjack);
             playerDealtDamage = true;
-            message = player.IsBlackjack
-                ? "BLACKJACK! You unleash a critical hit for {0} damage!"
-                : "You win the hand! Dealer takes {0} damage!";
+            isCriticalHit = player.IsBlackjack;
         }
         else if (dealer.Value > player.Value)
         {
             rawDamage = ScaleDamage(wager, dealer.IsBlackjack);
             playerDealtDamage = false;
-            message = dealer.IsBlackjack
-                ? "Dealer hits BLACKJACK! You take a critical {0} damage!"
-                : "Dealer wins the hand. You take {0} damage!";
+            isCriticalHit = dealer.IsBlackjack;
         }
         else
         {
@@ -351,17 +353,39 @@ class Game
             _player.WinStreak = 0;
         }
 
-        ApplyDamage(rawDamage, playerDealtDamage, message, isAllIn);
+        int damage = ApplyDamage(rawDamage, playerDealtDamage, isAllIn);
+        string message = BuildResultMessage(player, dealer, playerDealtDamage, isCriticalHit, damage);
+        Display.Line(message, playerDealtDamage ? "green" : "red");
+
         CheckForUpgradeOffer(playerDealtDamage);
         CheckEnrage();
     }
 
+    // Builds the round-result line shown to the player, given the outcome and
+    // the final (post-multiplier) damage amount.
+    private static string BuildResultMessage(Hand player, Hand dealer, bool playerDealtDamage, bool isCriticalHit, int damage)
+    {
+        if (player.IsBust)
+            return $"You busted. The Seminole Dealer hits you for {damage} damage!";
+        if (dealer.IsBust)
+            return $"Dealer busted! You strike for {damage} damage!";
+
+        if (playerDealtDamage)
+            return isCriticalHit
+                ? $"BLACKJACK! You unleash a critical hit for {damage} damage!"
+                : $"You win the hand! Dealer takes {damage} damage!";
+
+        return isCriticalHit
+            ? $"Dealer hits BLACKJACK! You take a critical {damage} damage!"
+            : $"Dealer wins the hand. You take {damage} damage!";
+    }
+
     // Applies all damage modifiers (momentum, all-in, curses, upgrades,
-    // enrage, tilt) to the raw wager damage and updates HP accordingly.
-    private void ApplyDamage(int rawDamage, bool playerDealtDamage, string messageTemplate, bool isAllIn)
+    // enrage, tilt) to the raw wager damage, updates HP accordingly, and
+    // returns the final damage amount actually dealt.
+    private int ApplyDamage(int rawDamage, bool playerDealtDamage, bool isAllIn)
     {
         int damage;
-        string color;
 
         if (playerDealtDamage)
         {
@@ -377,16 +401,10 @@ class Game
                 Display.Line("[Empowered Strike] Your attack hits harder!", "cyan");
             }
             _dealerHp = Math.Clamp(_dealerHp - damage, 0, _maxHp);
-            color = "green";
 
             if (_activeCurse == CursedModifier.FortunesFavor)
             {
-                int healed = Math.Min(5, _maxHp - _player.Hp);
-                if (healed > 0)
-                {
-                    _player.Hp += healed;
-                    Display.Line($"[Fortune's Favor] Victory heals you for {healed} HP!", "green");
-                }
+                Heal(ref _player.Hp, _maxHp, 5, "[Fortune's Favor] Victory heals you for {0} HP!", "green");
             }
         }
         else
@@ -404,10 +422,9 @@ class Game
                 damage = 0;
             }
             _player.Hp = Math.Clamp(_player.Hp - damage, 0, _maxHp);
-            color = "red";
         }
 
-        Display.Line(string.Format(messageTemplate, damage), color);
+        return damage;
     }
 
     // Converts a win streak (and optional "desperate" low-HP state) into a damage multiplier.
@@ -422,6 +439,23 @@ class Game
     // A blackjack doubles it.
     private static int ScaleDamage(int wager, bool isBlackjack)
         => isBlackjack ? wager * 2 : wager;
+
+    // Review note: this "clamp a heal to maxHp, apply it, print a message if
+    // any healing actually happened" pattern showed up four separate times
+    // (dealer self-heal in Run, Fortune's Favor, the mini-game premium bonus,
+    // and the Heal upgrade). Pulling it into one helper means there's a
+    // single place to change if the capping behavior ever needs to change.
+    // Returns the amount actually healed, in case a caller needs it.
+    private static int Heal(ref int hp, int maxHp, int amount, string messageTemplate, string color)
+    {
+        int healed = Math.Min(amount, maxHp - hp);
+        if (healed > 0)
+        {
+            hp += healed;
+            Display.Line(string.Format(messageTemplate, healed), color);
+        }
+        return healed;
+    }
 
     // After a player win, grants a streak gift every 3rd consecutive win
     // and offers a regular upgrade every 3rd total win.
@@ -582,12 +616,7 @@ class Game
 
         if (tier == MiniGames.RewardTier.Premium)
         {
-            int healed = Math.Min(5, _maxHp - _player.Hp);
-            if (healed > 0)
-            {
-                _player.Hp += healed;
-                Display.Line($"Incredible result! You also recover {healed} HP.", "green");
-            }
+            Heal(ref _player.Hp, _maxHp, 5, "Incredible result! You also recover {0} HP.", "green");
         }
 
         ApplyUpgrade(upgrade);
@@ -680,11 +709,15 @@ class Game
     {
         if (!AnsiConsole.Confirm("Place a side bet on this hand?", false)) return null;
 
+        // Review note: previously built `new SideBet(o, 0).Description` here,
+        // constructing a whole record with a placeholder 0 stake just to read
+        // display text that doesn't actually depend on Stake. SideBet.DescriptionFor
+        // avoids the throwaway object and the "why 0?" question at the call site.
         var outcome = AnsiConsole.Prompt(
             new SelectionPrompt<SideBetOutcome>()
                 .Title("Bet on:")
                 .HighlightStyle(new Style(Color.Gold1))
-                .UseConverter(o => new SideBet(o, 0).Description)
+                .UseConverter(SideBet.DescriptionFor)
                 .AddChoices(Enum.GetValues<SideBetOutcome>()));
 
         int maxStake = Math.Max(1, _player.Hp);
@@ -751,9 +784,7 @@ class Game
                 _player.RerollCharges++;
                 break;
             case UpgradeType.Heal:
-                int healed = Math.Min(15, _maxHp - _player.Hp);
-                _player.Hp += healed;
-                Display.Line($"You patch yourself up for {healed} HP.", "green");
+                Heal(ref _player.Hp, _maxHp, 15, "You patch yourself up for {0} HP.", "green");
                 break;
         }
 
